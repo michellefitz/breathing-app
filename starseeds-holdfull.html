@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Starseeds — Hold Full</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #04020a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 20px;
+  }
+  canvas { display: block; }
+  button {
+    font-family: sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: rgba(210, 195, 255, 0.7);
+    background: none;
+    border: 1px solid rgba(210, 195, 255, 0.25);
+    padding: 10px 28px;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  button:hover { border-color: rgba(210, 195, 255, 0.6); color: rgba(210, 195, 255, 1); }
+</style>
+</head>
+<body>
+<canvas id="c" width="1024" height="1024"></canvas>
+<button id="dl">Save as PNG</button>
+
+<script>
+const TAU = Math.PI * 2;
+
+const EASINGS = {
+  easeInOutSine: t => -(Math.cos(Math.PI * t) - 1) / 2,
+};
+
+class KaleidoscopeRenderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx    = canvas.getContext('2d');
+    this.src    = document.createElement('canvas');
+    this.srcCtx = this.src.getContext('2d');
+
+    this.segments        = 8;
+    this.style           = 'mandala';
+    this.hue             = 280;
+    this.colorShift      = 20;
+    this.saturation      = 1.0;
+    this.brightness      = 1.0;
+    this.rotationSpeed   = 0.08;
+    this.complexity      = 1.0;
+    this.scale           = 0.88;
+    this.lineWidth       = 1.0;
+    this.glowAmount      = 1.2;
+    this.colorSpread     = 1.2;
+    this.inhaleEase      = 'easeInOutSine';
+    this.exhaleEase      = 'easeInOutSine';
+    this.holdSpeed       = 0.75;
+    this.bgColor         = '#04020a';
+    this.vignetteStrength = 0.75;
+    this.centerGlow      = true;
+
+    // Frozen state — holdFull, evolved pattern
+    this.time        = 4.2;
+    this.rotation    = 0.42;
+    this._hueState   = 18;
+    this.breathScale = 1.0;
+    this.phase       = 'holdFull';
+    this._dotTime    = 0;
+
+    this.cx = canvas.width / 2;
+    this.cy = canvas.height / 2;
+    this.maxRadius = Math.min(canvas.width, canvas.height) * 0.46;
+    const s = Math.ceil(this.maxRadius * 2.5);
+    this.src.width  = s;
+    this.src.height = s;
+    this.srcHalf    = s / 2;
+  }
+
+  render() {
+    const { ctx, cx, cy, maxRadius } = this;
+    const R = maxRadius * this.scale * Math.max(0, this.breathScale);
+
+    ctx.fillStyle = this.bgColor;
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    if (R >= 2) {
+      this._drawSource(R);
+      this._compose(R);
+      if (this.vignetteStrength > 0) this._vignette(R);
+      if (this.centerGlow)           this._centerGlow(R);
+    }
+  }
+
+  _drawSource(R) {
+    const ctx  = this.srcCtx;
+    ctx.clearRect(0, 0, this.src.width, this.src.height);
+    ctx.save();
+    ctx.translate(this.srcHalf, this.srcHalf);
+    this._mandala(ctx, R, this.time);
+    ctx.restore();
+  }
+
+  _compose(R) {
+    const { ctx, cx, cy, src, srcHalf } = this;
+    const N     = 8;
+    const wedge = TAU / N;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, TAU);
+    ctx.clip();
+
+    for (let i = 0; i < N; i++) {
+      ctx.save();
+      ctx.rotate(i * wedge + this.rotation);
+      if (i % 2 === 1) { ctx.rotate(wedge); ctx.scale(1, -1); }
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, R + 2, 0, wedge);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(src, -srcHalf, -srcHalf, src.width, src.height);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  _vignette(R) {
+    const { ctx, cx, cy } = this;
+    const g = ctx.createRadialGradient(cx, cy, R * 0.50, cx, cy, R);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, `rgba(0,0,0,${this.vignetteStrength})`);
+    ctx.save();
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  _centerGlow(R) {
+    const { ctx, cx, cy } = this;
+    const r = R * 0.10;
+    const h = ((this._hueState + this.hue + 60) % 360 + 360) % 360;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0,    `hsla(${h}, 80%, 98%, 0.9)`);
+    g.addColorStop(0.35, `hsla(${h}, 90%, 85%, 0.4)`);
+    g.addColorStop(1,    'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, TAU);
+    ctx.fill();
+  }
+
+  _h(hOff) {
+    return ((this._hueState + this.hue + hOff) % 360 + 360) % 360;
+  }
+
+  _col(hOff, s, l, a) {
+    const ss = Math.max(0, Math.min(100, s * this.saturation));
+    const ll = Math.max(0, Math.min(100, l * this.brightness));
+    return `hsla(${this._h(hOff) | 0}, ${ss | 0}%, ${ll | 0}%, ${a})`;
+  }
+
+  _neonStroke(ctx, pathFn, hOff, coreW) {
+    const lw   = coreW * this.lineWidth;
+    const ga   = Math.max(0, this.glowAmount);
+    const hCore = this._h(hOff);
+    const hGlow = this._h(hOff - 55);
+    const s    = Math.max(0, Math.min(100, 92 * this.saturation));
+    const l    = Math.max(0, Math.min(100, 70 * this.brightness));
+    const lHi  = Math.max(0, Math.min(100, 94 * this.brightness));
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+
+    ctx.strokeStyle = `hsla(${hGlow}, ${s}%, ${l+8}%, ${0.20 * ga})`;
+    ctx.lineWidth   = lw * 3.6 * Math.max(0.3, Math.sqrt(ga));
+    pathFn(ctx); ctx.stroke();
+
+    ctx.strokeStyle = `hsla(${hCore}, ${s}%, ${lHi}%, ${Math.min(0.50 * ga, 0.85)})`;
+    ctx.lineWidth   = lw * 1.6;
+    pathFn(ctx); ctx.stroke();
+
+    ctx.strokeStyle = `hsla(${hCore}, ${s}%, ${lHi}%, 0.94)`;
+    ctx.lineWidth   = lw;
+    pathFn(ctx); ctx.stroke();
+
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  _flowerPath(ctx, r0, A, n, phase, steps = 280) {
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const θ = (i / steps) * TAU;
+      const r = r0 - A * Math.cos(n * θ + phase);
+      i === 0
+        ? ctx.moveTo(r * Math.cos(θ), r * Math.sin(θ))
+        : ctx.lineTo(r * Math.cos(θ), r * Math.sin(θ));
+    }
+    ctx.closePath();
+  }
+
+  _mandala(ctx, R, t) {
+    const N  = 8;
+    const w  = TAU / N;
+    const cs = this.colorSpread;
+    const cmpl = this.complexity;
+
+    const rings = [
+      { r: 0.115, A: 0.022, n: N,     dH:   0 * cs, cW: 1.4 },
+      { r: 0.240, A: 0.055, n: N,     dH:  40 * cs, cW: 2.2 },
+      { r: 0.380, A: 0.080, n: N,     dH: -30 * cs, cW: 2.8 },
+      { r: 0.530, A: 0.085, n: N,     dH:  65 * cs, cW: 2.8 },
+      { r: 0.670, A: 0.075, n: N,     dH: -55 * cs, cW: 2.4 },
+      { r: 0.800, A: 0.060, n: N,     dH: 100 * cs, cW: 2.0 },
+      { r: 0.905, A: 0.035, n: N * 2, dH: 145 * cs, cW: 1.4 },
+    ];
+    for (const ring of rings) {
+      const r0    = R * ring.r;
+      const A     = R * ring.A * (0.7 + 0.3 * cmpl);
+      const phase = t * 0.07 * ring.n;
+      this._neonStroke(ctx, c => this._flowerPath(c, r0, A, ring.n, phase), ring.dH, ring.cW);
+    }
+
+    // Secondary rings (complexity > 0.5)
+    const secondaryRings = [
+      { r: 0.305, A: 0.038, n: N, dH: -15 * cs, cW: 1.2 },
+      { r: 0.450, A: 0.050, n: N, dH:  80 * cs, cW: 1.4 },
+      { r: 0.600, A: 0.045, n: N, dH: -70 * cs, cW: 1.2 },
+      { r: 0.745, A: 0.040, n: N, dH: 120 * cs, cW: 1.1 },
+    ];
+    for (const ring of secondaryRings) {
+      const r0    = R * ring.r;
+      const A     = R * ring.A * cmpl;
+      const phase = t * 0.05 * ring.n + Math.PI / ring.n;
+      this._neonStroke(ctx, c => this._flowerPath(c, r0, A, ring.n, phase), ring.dH, ring.cW * 0.65);
+    }
+
+    // Off-axis detail circles
+    const detailRings = [
+      { rBase: 0.24, rCirc: 0.052, dH:  15 * cs },
+      { rBase: 0.38, rCirc: 0.070, dH: -35 * cs },
+      { rBase: 0.53, rCirc: 0.082, dH:  55 * cs },
+      { rBase: 0.67, rCirc: 0.075, dH: -60 * cs },
+    ];
+    for (const dr of detailRings) {
+      const baseR = R * dr.rBase;
+      const circR = R * dr.rCirc;
+      const spin  = t * 0.04;
+      for (let i = 0; i < N; i++) {
+        const a  = (i + 0.5) * w + spin;
+        const cx = baseR * Math.cos(a);
+        const cy = baseR * Math.sin(a);
+        this._neonStroke(ctx, c => { c.beginPath(); c.arc(cx, cy, circR, 0, TAU); }, dr.dH, 1.1);
+      }
+    }
+
+    // Radial spines
+    for (let i = 0; i < N; i++) {
+      const a  = (i + 0.5) * w;
+      const dH = i * (360 / N);
+      this._neonStroke(ctx, c => {
+        c.beginPath();
+        c.moveTo(R * 0.10 * Math.cos(a), R * 0.10 * Math.sin(a));
+        c.lineTo(R * 0.94 * Math.cos(a), R * 0.94 * Math.sin(a));
+      }, dH + 20, 1.0);
+    }
+
+    // Inner star
+    this._neonStroke(
+      ctx,
+      c => this._flowerPath(c, R * 0.115, R * 0.028, N * 2, t * 1.5, 180),
+      180,
+      1.0
+    );
+  }
+}
+
+const canvas = document.getElementById('c');
+const r = new KaleidoscopeRenderer(canvas);
+r.render();
+
+document.getElementById('dl').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.download = 'starseeds-holdfull.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+});
+</script>
+</body>
+</html>
