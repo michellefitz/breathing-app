@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nebula Bloom — Shader Playground</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* The shader fills the whole canvas; keep the phase label legible on top. */
+    #phase-label { mix-blend-mode: screen; }
+  </style>
+</head>
+<body>
+
+  <canvas id="canvas"></canvas>
+
+  <!-- Breath guide UI -->
+  <div id="ui-overlay">
+    <div id="phase-label">breathe in</div>
+  </div>
+
+  <!-- Vendor -->
+  <script src="vendor/lil-gui.umd.min.js"></script>
+  <script src="vendor/stats.min.js"></script>
+
+  <!-- App -->
+  <script src="BreathingClock.js"></script>
+  <script src="shader-bloom.js"></script>
+
+</body>
+</html>
