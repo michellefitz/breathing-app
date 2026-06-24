@@ -49,6 +49,9 @@ uniform float uPetalLen;    // how far petals reach when open
 uniform float uWarp;        // liquid warp strength
 uniform float uSwirl;       // how much petals twist as they open
 uniform float uBloom;       // overall flower size
+uniform float uFiber;       // fibrous filament strength (0 = smooth petals)
+uniform float uFiberCount;  // density of the radial hairs
+uniform float uCenter;      // size of the dark stamen centre
 uniform float uGlow;        // central core glow
 uniform float uGrain;       // film grain
 uniform vec3  uBg;          // background tint
@@ -128,6 +131,15 @@ void main(){
 
   float n = fbm(uv * 4.0 + t * 0.12);   // texture inside the petals
 
+  // Fibrous filaments: fine hairs radiating from the centre. This is the
+  // organic "real flower" texture in the reference — thin bright streaks,
+  // gently wavering, broken up into hairs by noise along their length.
+  float fa  = a + (fbm(uv * 2.5 + t * 0.05) - 0.5) * 0.6;
+  float fib = pow(0.5 + 0.5 * sin(fa * uFiberCount),             6.0);
+  fib      += pow(0.5 + 0.5 * sin(fa * uFiberCount * 0.5 + 1.3), 5.0) * 0.55;
+  fib      *= 0.45 + 0.55 * fbm(vec2(fa * 10.0, r * 7.0 - t * 0.15));
+  fib      *= smoothstep(0.03, 0.22, r);
+
   vec3 col = uBg;
 
   // Staggered unfurl: outer petals open first, inner rows follow.
@@ -138,34 +150,50 @@ void main(){
   float B = uBloom;
   float P = uPetals;
   float m;
+  float cover = 0.0;                     // total petal coverage, for fibre highlights
+
+  // Fibres carve light into each petal's shading.
+  float fibShade = (1.0 - uFiber * 0.6) + uFiber * 0.6 * (0.25 + 1.5 * fib);
 
   // Ring 0 — outer petals (behind).
   {
     float mask = petalRing(a, r, P, t * 0.02,
-                           0.16 * B, uPetalLen * 0.82 * B * g0, uSharp, 0.05, m);
-    float shade = (0.35 + 0.65 * m) * (0.55 + 0.55 * n);
+                           0.16 * B, uPetalLen * 0.82 * B * g0, uSharp, 0.06, m);
+    float shade = (0.35 + 0.65 * m) * (0.55 + 0.55 * n) * fibShade;
     vec3  c = palette(uHue + 0.00 + r * 0.45 + n * uColorShift);
     col = mix(col, c * uBright * shade, mask);
+    cover = max(cover, mask);
   }
   // Ring 1 — mid petals, offset half a petal, a touch brighter.
   {
     float mask = petalRing(a, r, P, t * 0.02 + 3.14159 / P,
-                           0.12 * B, uPetalLen * 0.60 * B * g1, uSharp * 1.1, 0.045, m);
-    float shade = (0.40 + 0.60 * m) * (0.60 + 0.50 * n);
+                           0.12 * B, uPetalLen * 0.60 * B * g1, uSharp * 1.1, 0.05, m);
+    float shade = (0.40 + 0.60 * m) * (0.60 + 0.50 * n) * fibShade;
     vec3  c = palette(uHue + 0.10 + r * 0.50 + n * uColorShift);
     col = mix(col, c * uBright * shade * 1.10, mask);
+    cover = max(cover, mask);
   }
   // Ring 2 — inner petals (front), tightest and brightest.
   {
     float mask = petalRing(a, r, P, t * 0.02,
-                           0.07 * B, uPetalLen * 0.40 * B * g2, uSharp * 1.25, 0.04, m);
-    float shade = (0.45 + 0.55 * m) * (0.65 + 0.45 * n);
+                           0.07 * B, uPetalLen * 0.40 * B * g2, uSharp * 1.25, 0.045, m);
+    float shade = (0.45 + 0.55 * m) * (0.65 + 0.45 * n) * fibShade;
     vec3  c = palette(uHue + 0.20 + r * 0.55 + n * uColorShift);
     col = mix(col, c * uBright * shade * 1.20, mask);
+    cover = max(cover, mask);
   }
 
-  // Central core / stamen glow.
-  col += palette(uHue + 0.30) * exp(-r * 9.0) * uGlow * (0.5 + 0.9 * grow);
+  // Bright filament highlights riding on top of the petals.
+  col += palette(uHue + 0.12) * fib * cover * uFiber * 0.7;
+
+  // Dark detailed centre (stamen) with bright specks.
+  float cen = smoothstep(uCenter, uCenter * 0.5, r);
+  col = mix(col, mix(uBg, vec3(0.02), 0.7), cen * 0.8);
+  float sp = smoothstep(0.80, 0.92, noise(uv * 46.0 + t * 0.25));
+  col += palette(uHue + 0.30) * sp * cen * (0.5 + 1.0 * grow);
+
+  // Central core glow (suppressed under the dark stamen).
+  col += palette(uHue + 0.30) * exp(-r * 9.0) * uGlow * (0.4 + 0.8 * grow) * (1.0 - cen * 0.5);
 
   // Soft outward halo so the bloom glows into the dark.
   col += palette(uHue + 0.05) * exp(-r * 2.2) * (0.10 + 0.18 * grow);
@@ -224,7 +252,8 @@ gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 const U = {};
 [
   'uRes','uTime','uBreath','uHue','uColorShift','uColorSpread','uSat','uBright',
-  'uPetals','uSharp','uPetalLen','uWarp','uSwirl','uBloom','uGlow','uGrain','uBg',
+  'uPetals','uSharp','uPetalLen','uWarp','uSwirl','uBloom',
+  'uFiber','uFiberCount','uCenter','uGlow','uGrain','uBg',
 ].forEach(name => { U[name] = gl.getUniformLocation(program, name); });
 
 function resize() {
@@ -260,14 +289,19 @@ const params = {
   bgColor: '#04020a',
 
   // Flower shape
-  petals: 7,
-  sharp: 1.6,
-  petalLen: 0.55,
+  petals: 6,
+  sharp: 1.3,
+  petalLen: 0.6,
   bloom: 1.0,
+  center: 0.12,
+
+  // Filaments (the organic hair texture)
+  fiber: 0.7,
+  fiberCount: 140,
 
   // Liquid motion
-  warp: 0.4,
-  swirl: 0.5,
+  warp: 0.45,
+  swirl: 0.45,
 
   // Light
   glow: 1.0,
@@ -282,12 +316,15 @@ const params = {
 };
 
 const PRESETS = {
-  Violet: { hue: 0.72, colorShift: 0.40, colorSpread: 0.9, bgColor: '#04020a', petals: 7, sharp: 1.6, petalLen: 0.55, warp: 0.40, swirl: 0.5,  glow: 1.0 },
-  Rose:   { hue: 0.94, colorShift: 0.30, colorSpread: 0.8, bgColor: '#0a0206', petals: 9, sharp: 1.8, petalLen: 0.50, warp: 0.30, swirl: 0.35, glow: 1.05 },
-  Lotus:  { hue: 0.86, colorShift: 0.35, colorSpread: 0.9, bgColor: '#0a0408', petals: 8, sharp: 1.5, petalLen: 0.58, warp: 0.35, swirl: 0.4,  glow: 1.0 },
-  Marigold:{hue: 0.08, colorShift: 0.30, colorSpread: 0.9, bgColor: '#0a0501', petals: 12,sharp: 2.0, petalLen: 0.45, warp: 0.35, swirl: 0.3,  glow: 1.1 },
-  Ocean:  { hue: 0.54, colorShift: 0.45, colorSpread: 1.0, bgColor: '#01080a', petals: 6, sharp: 1.4, petalLen: 0.60, warp: 0.55, swirl: 0.7,  glow: 0.9 },
-  Aurora: { hue: 0.45, colorShift: 0.55, colorSpread: 1.4, bgColor: '#01060a', petals: 5, sharp: 1.2, petalLen: 0.62, warp: 0.6,  swirl: 0.8,  glow: 0.95 },
+  // Glowing yellow fibrous flower — the right-hand reference panel.
+  Anemone: { hue: 0.15, colorShift: 0.22, colorSpread: 0.8, bgColor: '#050505', petals: 6, sharp: 1.2, petalLen: 0.62, center: 0.13, fiber: 0.85, fiberCount: 160, warp: 0.45, swirl: 0.4,  glow: 1.1 },
+  // Dark flower with white filament edges on green — the left panel.
+  Ink:     { hue: 0.35, colorShift: 0.18, colorSpread: 0.7, bgColor: '#03160a', petals: 6, sharp: 1.4, petalLen: 0.60, center: 0.14, fiber: 0.95, fiberCount: 180, warp: 0.40, swirl: 0.35, glow: 0.5 },
+  // Soft pink watercolour bleed — the middle panel.
+  Blush:   { hue: 0.96, colorShift: 0.25, colorSpread: 0.8, bgColor: '#0a060a', petals: 6, sharp: 1.0, petalLen: 0.64, center: 0.10, fiber: 0.25, fiberCount: 100, warp: 0.70, swirl: 0.3,  glow: 1.0 },
+  Violet:  { hue: 0.72, colorShift: 0.40, colorSpread: 0.9, bgColor: '#04020a', petals: 7, sharp: 1.5, petalLen: 0.55, center: 0.12, fiber: 0.6,  fiberCount: 140, warp: 0.40, swirl: 0.5,  glow: 1.0 },
+  Lotus:   { hue: 0.86, colorShift: 0.35, colorSpread: 0.9, bgColor: '#0a0408', petals: 8, sharp: 1.5, petalLen: 0.58, center: 0.11, fiber: 0.5,  fiberCount: 130, warp: 0.35, swirl: 0.4,  glow: 1.0 },
+  Ocean:   { hue: 0.54, colorShift: 0.45, colorSpread: 1.0, bgColor: '#01080a', petals: 6, sharp: 1.4, petalLen: 0.60, center: 0.12, fiber: 0.55, fiberCount: 150, warp: 0.55, swirl: 0.7,  glow: 0.9 },
 };
 
 const gui = new lil.GUI({ title: 'Flower Bloom', width: 290 });
@@ -325,6 +362,11 @@ shapeF.add(params, 'petals', 3, 16, 1).name('Petals');
 shapeF.add(params, 'sharp', 0.6, 3.5, 0.05).name('Petal definition');
 shapeF.add(params, 'petalLen', 0.25, 0.85, 0.01).name('Petal length');
 shapeF.add(params, 'bloom', 0.6, 1.5, 0.01).name('Flower size');
+shapeF.add(params, 'center', 0.0, 0.3, 0.01).name('Centre size');
+
+const fibF = gui.addFolder('FILAMENTS');
+fibF.add(params, 'fiber', 0, 1.2, 0.01).name('Fibre strength');
+fibF.add(params, 'fiberCount', 40, 260, 2).name('Fibre density');
 
 const motionF = gui.addFolder('LIQUID MOTION');
 motionF.add(params, 'warp', 0, 1.2, 0.01).name('Warp (flow)');
@@ -397,6 +439,9 @@ function frame() {
   gl.uniform1f(U.uWarp, params.warp);
   gl.uniform1f(U.uSwirl, params.swirl);
   gl.uniform1f(U.uBloom, params.bloom);
+  gl.uniform1f(U.uFiber, params.fiber);
+  gl.uniform1f(U.uFiberCount, params.fiberCount);
+  gl.uniform1f(U.uCenter, params.center);
   gl.uniform1f(U.uGlow, params.glow);
   gl.uniform1f(U.uGrain, params.grain);
   gl.uniform3f(U.uBg, bg[0], bg[1], bg[2]);
