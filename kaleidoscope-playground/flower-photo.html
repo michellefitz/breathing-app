@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Flower Photo Bloom — Shader Playground</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    #phase-label { mix-blend-mode: screen; }
+
+    /* Centered "load a photo" prompt, shown until an image is picked. */
+    #loader {
+      position: fixed; inset: 0; z-index: 9000;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 18px; text-align: center; padding: 24px;
+      font-family: -apple-system, system-ui, sans-serif; color: #e8e0f0;
+    }
+    #loader.hidden { display: none; }
+    #loader h1 { font-size: 19px; font-weight: 500; letter-spacing: 0.3px; opacity: 0.9; margin: 0; }
+    #loader p  { font-size: 13px; opacity: 0.55; max-width: 280px; line-height: 1.5; margin: 0; }
+    .pick-btn {
+      display: inline-block; padding: 14px 26px; border-radius: 999px;
+      background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.22);
+      color: #fff; font-size: 15px; letter-spacing: 0.3px; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .pick-btn:active { background: rgba(255,255,255,0.18); }
+    #file { display: none; }
+  </style>
+</head>
+<body>
+
+  <canvas id="canvas"></canvas>
+
+  <div id="ui-overlay">
+    <div id="phase-label">breathe in</div>
+  </div>
+
+  <div id="loader">
+    <h1>Flower Photo Bloom</h1>
+    <p>Pick a flower photo and watch it bloom with your breath. A close-up flower on a dark background works best.</p>
+    <label class="pick-btn" for="file">Choose a flower photo</label>
+    <input id="file" type="file" accept="image/*" />
+  </div>
+
+  <script src="vendor/lil-gui.umd.min.js"></script>
+  <script src="vendor/stats.min.js"></script>
+
+  <script src="BreathingClock.js"></script>
+  <script src="flower-photo.js"></script>
+
+</body>
+</html>
